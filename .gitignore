@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Registros e configurações locais; os nomes são limitados à raiz do projeto.
+/.agents/
+/.codex/
+/.aws/
+/.private/
+/php-security-auditor-private/
+/.env
+/.env.*
+!/.env.example
+/config.local.*
+
+# Saídas operacionais locais. Fixtures sintéticas em tests/ continuam permitidas.
+/backup/
+/backups/
+/relatorios-locais/
+/evidencias-locais/
+/resultados-auditoria/
+/logs/
+/*.log
+
+# Artefatos de desenvolvimento.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.swp
+*.tmp

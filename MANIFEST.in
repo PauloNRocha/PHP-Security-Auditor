@@ -1,0 +1,18 @@
+include AGENTS.md CHANGELOG.md CONTRIBUTING.md LICENSE README.md SECURITY.md php-security-auditor
+recursive-include docs *.md
+include tests/test_auditor.py
+include tests/test_regressions.py
+include tests/test_remote_audit_fixes.py
+include tests/test_plan_results.py
+include tools/check_sdist.py
+global-exclude *.py[cod]
+prune .agents
+prune .codex
+prune .aws
+prune .private
+prune backup
+prune backups
+prune relatorios-locais
+prune evidencias-locais
+prune resultados-auditoria
+prune logs

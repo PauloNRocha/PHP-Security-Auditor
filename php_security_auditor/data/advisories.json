@@ -1,0 +1,16 @@
+{
+  "updated": "2026-10-22",
+  "cves": ["CVE-2026-109618", "CVE-2026-109619"],
+  "upstream": {"8.2": "8.2.35", "8.3": "8.3.36", "8.4": "8.4.27", "8.5": "8.5.12"},
+  "vendors": {
+    "debian": {
+      "12": {"php8.2": {"fixed": "8.2.35-1~deb12u1", "source": "https://lists.debian.org/debian-lts-announce/2026/10/msg00042.html"}},
+      "13": {"php8.4": {"fixed": "8.4.27-1~deb13u1", "source": "https://lists.debian.org/debian-security-announce/2026/msg00489.html"}}
+    },
+    "ubuntu": {
+      "22.04": {"php8.1": {"fixed": "8.1.2-1ubuntu2.28", "source": "https://ubuntu.com/security/notices/USN-8948-1"}},
+      "24.04": {"php8.3": {"fixed": "8.3.6-0ubuntu0.24.04.13", "source": "https://ubuntu.com/security/notices/USN-8948-1"}},
+      "26.04": {"php8.5": {"fixed": "8.5.4-0ubuntu1.5", "source": "https://ubuntu.com/security/notices/USN-8948-1"}}
+    }
+  }
+}

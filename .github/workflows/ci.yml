@@ -1,0 +1,71 @@
+name: Testes automatizados
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - name: Obter código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preparar Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Executar testes isolados
+        run: |
+          python --version
+          python -m unittest discover -s tests -q
+
+      - name: Verificar sintaxe Python
+        run: python -m compileall -q php_security_auditor tests tools
+
+      - name: Conferir versão e metadados
+        run: |
+          python - <<'PY'
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          from php_security_auditor import VERSION
+
+          metadata = Path('pyproject.toml').read_text(encoding='utf-8')
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:\.dev\d+)?', VERSION):
+              raise SystemExit(f'Versão fora do formato aprovado: {VERSION}')
+          if not re.search(r'(?m)^dynamic\s*=\s*\[\s*"version"\s*\]\s*$', metadata):
+              raise SystemExit('Versão dinâmica ausente dos metadados')
+          if not re.search(
+              r'(?m)^version\s*=\s*\{\s*attr\s*=\s*"php_security_auditor\.VERSION"\s*\}\s*$',
+              metadata,
+          ):
+              raise SystemExit('Metadados não apontam para VERSION')
+          result = subprocess.run(
+              [sys.executable, '-m', 'php_security_auditor.cli', '--version'],
+              check=True, capture_output=True, text=True,
+          )
+          if result.stdout.strip() != f'php-security-auditor {VERSION}':
+              raise SystemExit('Versão da CLI diverge da versão do pacote')
+          print(result.stdout.strip())
+          PY
+
+      - name: Verificar ajuda da CLI
+        run: python -m php_security_auditor.cli --help > /dev/null
