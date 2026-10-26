@@ -8,15 +8,11 @@ São relevantes relatos de execução inesperada de comandos, vazamento de dados
 
 ## Como relatar uma vulnerabilidade
 
-**O canal privado de relatos ainda não está habilitado nem verificado.** Não envie detalhes sensíveis em issues públicas. Até que haja um canal aprovado e indicado nesta política, solicite ao responsável pelo projeto um meio privado adequado antes de compartilhar o conteúdo do relato. Não há endereço de contato ou prazo de resposta definido.
+O PHP Security Auditor recebe relatos de segurança pelo **GitHub Private Vulnerability Reporting**, habilitado neste repositório público. Para comunicar uma vulnerabilidade, acesse [Security → Advisories](https://github.com/PauloNRocha/PHP-Security-Auditor/security/advisories) e selecione **Report a vulnerability**. O formulário permite compartilhar o relato de forma privada com os responsáveis pelo projeto.
 
-O recurso [GitHub Private Vulnerability Reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository) permite relatos privados em repositórios públicos. Sua habilitação e verificação são requisitos anteriores à divulgação pública do projeto. Após autorização para a mudança de visibilidade e assim que a configuração estiver disponível, o responsável deve:
+**Não divulgue detalhes de vulnerabilidades, provas de conceito ou evidências sensíveis em Issues, Pull Requests ou discussões públicas.** Se o formulário de relato privado não estiver acessível, informe apenas a indisponibilidade do canal por meio de uma Issue, sem incluir detalhes técnicos do problema.
 
-1. Habilitar o recurso.
-2. Verificar o formulário de relato privado e o recebimento das notificações.
-3. Atualizar esta política com o canal efetivamente disponível antes da divulgação.
-
-Quando esse canal estiver habilitado e verificado, os relatos poderão ser enviados pelo formulário **Report a vulnerability** na área de avisos de segurança do repositório.
+A habilitação do recurso está confirmada nas configurações do repositório. O recebimento das notificações e o fluxo completo de resposta ainda não foram verificados de ponta a ponta; não há prazo de resposta garantido.
 
 ## Conteúdo do relato e divulgação responsável
 
