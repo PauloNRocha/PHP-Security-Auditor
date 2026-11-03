@@ -22,12 +22,13 @@
 - A identidade dos logs preservados é verificada por dispositivo, inode, tamanho e horário de modificação, sem hash do conteúdo integral examinado. Um host já comprometido pode adulterar metadados ou saídas locais. O pacote de fontes exige revisão manual do conteúdo, além da verificação automática de nomes e tipos.
 - Os testes automatizados são isolados e simulados. Há [validação operacional limitada em ambiente isolado com Debian 13 Trixie](testes.md#validação-operacional-em-debian-13), sem atualização real de pacotes vulneráveis. Não há validação operacional em Debian 12, Ubuntu LTS ou servidores de produção.
 
-## Limitações conhecidas da versão 0.1.0
+## Verificação e cobertura no ciclo 0.1.1
 
-- **`verify`:** pode retornar código `0` mesmo quando o resultado interno é `VALIDAÇÃO INCOMPLETA`. Não utilize esse código isoladamente para aprovar uma atualização ou confirmar a segurança do sistema. Leia o resultado, confira a cobertura e valide manualmente a aplicação; o comando não executa testes HTTP funcionais automaticamente.
-- **Limitações de contêineres:** o relatório de auditoria não contabiliza corretamente todas as limitações aninhadas de Docker, Podman e LXC, inclusive na contagem do resumo. Não deduza cobertura completa pela ausência dessas limitações no relatório. Examine a cobertura detalhada e as limitações estruturadas de `plan`; nenhuma dessas saídas inspeciona o interior dos contêineres.
+- **`verify`:** `0` significa resultado satisfatório somente nas verificações automatizadas descritas no [contrato de utilização](utilizacao.md#verificação-automatizada); cobertura essencial incompleta, runtime não comprovado, contêiner relacionado não inspecionado, executável removido ou falha retornam `2`. Não há teste HTTP funcional automático nem comprovação da integridade dos bytes. Sem pacote PHP corrigido avaliável, a verificação não é aprovada, mesmo que `plan` possa concluir `SEM_ACAO`.
+- **Contêineres:** limitações aninhadas são contabilizadas e os resumos apresentam categorias por mecanismo. Uma consulta bem-sucedida sem relacionado significa apenas que não houve indício nos metadados dos contêineres em execução. Contêineres parados e o interior de qualquer contêiner ficam fora do escopo. Ausência da ferramenta e falha de consulta não comprovam ausência de contêineres.
+- **Classificação consolidada:** falhas opcionais dos mecanismos, sem contêiner relacionado identificado, não tornam por si só um pacote vulnerável nem impedem o resultado automatizado satisfatório. Permanecem limitações explícitas. Contêiner relacionado com versão interna não comprovada mantém `INDETERMINADO` e impede `verify`; `plan` permanece inconclusivo.
 
-As duas limitações estão presentes na versão `0.1.0` e exigem correção e testes de regressão em versão posterior. A remediação operacional continua bloqueada.
+Na 0.1.0, `verify` podia retornar sucesso sem suficiência e os relatórios omitiam limitações aninhadas. Automações precisam adaptar-se ao retorno corrigido. As regressões são testadas com dados sintéticos; a remediação operacional continua bloqueada.
 
 ## Proposta futura para logs grandes
 

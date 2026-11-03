@@ -2,7 +2,7 @@
 
 ## Escopo
 
-Esta política abrange o PHP Security Auditor `0.1.0`, destinado a inventário, auditoria local, investigação limitada e planejamento APT. A remediação operacional está bloqueada, inclusive após confirmação humana, até ensaios representativos e aprovação específica. A [matriz de compatibilidade](docs/compatibilidade.md) distingue regras implementadas, testes isolados e validação operacional.
+Esta política abrange a série `0.1` do PHP Security Auditor, destinado a inventário, auditoria local, investigação limitada e planejamento APT. A remediação operacional está bloqueada, inclusive após confirmação humana, até ensaios representativos e aprovação específica. A [matriz de compatibilidade](docs/compatibilidade.md) distingue regras implementadas, testes isolados e validação operacional.
 
 São relevantes relatos de execução inesperada de comandos, vazamento de dados, atualização não autorizada, corrupção de evidências, falhas de controle de acesso ou conclusões indevidas sobre versões e cobertura. Limitações documentadas não excluem automaticamente um problema de segurança.
 
@@ -30,4 +30,4 @@ Pacotes sem origem ou versão comprovada devem permanecer **INDETERMINADOS**. Re
 
 Testes automatizados e revisões estáticas não demonstram segurança em produção. A inspeção de contêineres, a correlação forense e a validação de todos os workers web são limitadas.
 
-Em particular, `verify` pode retornar código `0` com validação interna incompleta e não executa testes HTTP funcionais. O relatório de auditoria não contabiliza corretamente todas as limitações aninhadas de Docker, Podman e LXC; `plan` apresenta essas limitações de forma estruturada. Consulte as [limitações conhecidas](docs/limitacoes.md) antes de interpretar os resultados.
+`verify` retorna `0` apenas para um resultado satisfatório no escopo automatizado observado e `2` para insuficiência, resultado insatisfatório ou falha operacional. Não executa testes HTTP funcionais nem comprova integridade dos executáveis. Limitações aninhadas de Docker, Podman e LXC são apresentadas nos relatórios; indisponibilidade opcional não comprova vulnerabilidade, ausência de contêineres ou inspeção de seu interior. Consulte as [limitações conhecidas](docs/limitacoes.md) antes de interpretar os resultados.

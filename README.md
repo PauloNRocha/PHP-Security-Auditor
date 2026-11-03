@@ -21,7 +21,7 @@ O PHP Security Auditor reúne inventário, avaliação de versões, investigaç�
 
 ## Segurança e limites operacionais
 
-**A remediação operacional está bloqueada na versão 0.1.0.** O comando `remediate` aparece na interface, mas recusa atualizações mesmo após confirmação humana.
+**A remediação operacional continua bloqueada.** O comando `remediate` aparece na interface, mas recusa atualizações mesmo após confirmação humana.
 
 A auditoria padrão é passiva: não atualiza pacotes nem altera configurações, serviços ou firewall. Escrita de relatórios e preservação de evidências são opcionais. A ferramenta não executa provas de conceito nem binários PHP desconhecidos para consultar versões.
 
@@ -101,8 +101,8 @@ Para `plan`, o código de saída é `0` nos estados `PLANO_DISPONIVEL` e `SEM_AC
 
 ## Limitações conhecidas
 
-- `verify` pode retornar código `0` com validação interna incompleta e não executa teste HTTP funcional. Seu código de saída não deve aprovar uma atualização ou confirmar segurança isoladamente.
-- O relatório de auditoria não contabiliza corretamente todas as limitações aninhadas de contêineres. Examine a cobertura detalhada e as limitações estruturadas de `plan`; o interior dos contêineres não é inspecionado.
+- `verify` retorna `0` somente quando as verificações automatizadas dos pacotes e runtimes observados são satisfatórias; resultados insuficientes ou falhas retornam `2`. Não executa teste HTTP funcional nem confirma a segurança de todo o ambiente. Veja o [contrato de verificação](docs/utilizacao.md#verificação-automatizada).
+- Limitações de contêineres aparecem nos relatórios; indisponibilidade de um mecanismo opcional não comprova vulnerabilidade nem ausência de contêineres. O interior dos contêineres não é inspecionado.
 - A descoberta de instalações e a triagem de evidências não são exaustivas. Logs grandes, dados indisponíveis e limites de leitura podem deixar lacunas.
 - Metadados APT e propriedade de arquivos por pacote não comprovam a integridade dos bytes instalados.
 

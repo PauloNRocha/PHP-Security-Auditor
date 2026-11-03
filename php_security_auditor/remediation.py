@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from .backup import BackupSession, _write_exclusive, validate_manifest
+from .coverage import coverage_limitations
 from .discovery import FPM_SERVICE, PHP_NAMES, discover
 from .system import System
 from .versions import compare, database, evaluate, package_origin
@@ -37,13 +38,7 @@ def _simulation(system: System, specs: list[str]) -> tuple[list[str], int]:
 
 
 def _coverage_limitations(coverage: dict) -> list[str]:
-    notes = []
-    for source, value in coverage.items():
-        entries = value.items() if isinstance(value, dict) else ((source, value),)
-        for label, detail in entries:
-            if "incompleta" in str(detail):
-                notes.append(f"Cobertura {label}: {detail}")
-    return notes
+    return coverage_limitations(coverage)
 
 
 def _unmatched_runtime(system: System, inventory: dict, assessed: list[dict]) -> bool:

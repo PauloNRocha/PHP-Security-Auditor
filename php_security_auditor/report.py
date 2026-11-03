@@ -10,12 +10,14 @@ from pathlib import Path
 from . import VERSION
 from .backup import _secure_mkdirs
 from .discovery import PHP_NAMES
+from .coverage import container_summary, coverage_limitations
+from .verification import sanitized_verification
 
 
 def build(inventory: dict, assessed: list[dict], investigation: dict | None,
           changes: dict | None = None) -> dict:
     unknown_runtime = bool((inventory["host_php"] and not any(p["status"] != "NÃO APLICÁVEL" for p in assessed)) or inventory["containers"] or
-                           any("incompleta" in value for value in inventory["coverage"].values()) or
+                           any(isinstance(value, str) and "incompleta" in value for value in inventory["coverage"].values()) or
                            any(str(b.get(key, "")).startswith(("/usr/local/", "/opt/"))
                                for b in inventory["binaries"] for key in ("path", "target")) or
                            any(PHP_NAMES.match(p.get("name", "")) and
@@ -24,13 +26,14 @@ def build(inventory: dict, assessed: list[dict], investigation: dict | None,
     statuses = {p["status"] for p in assessed}
     if "VULNERÁVEL" in statuses:
         status = "VULNERÁVEL"
-    elif "INDETERMINADO" in statuses or unknown_runtime or (not inventory["host_php"] and any("incompleta" in v for v in inventory["coverage"].values())):
+    elif "INDETERMINADO" in statuses or unknown_runtime:
         status = "INDETERMINADO"
     elif "CORRIGIDO" in statuses:
         status = "CORRIGIDO"
     else:
         status = "NÃO APLICÁVEL"
-    limitations = [f"{key}: {value}" for key, value in inventory["coverage"].items() if "incompleta" in value]
+    # As falhas opcionais aninhadas são limitações, não evidência de runtime vulnerável.
+    limitations = coverage_limitations(inventory["coverage"])
     if any(p.get("origin", "").startswith("oficial ") for p in assessed):
         limitations.append("APT confirma disponibilidade da versão em arquivo oficial, não a proveniência nem a integridade dos bytes instalados.")
     if investigation:
@@ -59,7 +62,8 @@ def build(inventory: dict, assessed: list[dict], investigation: dict | None,
                                (investigation.get("recommendations", []) if investigation else []),
             "backups": [changes["backup"]] if changes and changes.get("backup") else [],
             "changes": changes or {}, "tests": changes.get("validation", []) if changes else [],
-            "final_result": changes.get("status") if changes else status}
+            "final_result": changes.get("status") if changes else status,
+            **({"verification": changes["verification"]} if changes and "verification" in changes else {})}
 
 
 def _safe_iso(value: object) -> str | None:
@@ -95,6 +99,8 @@ def sanitized(report: dict) -> dict:
             "investigation_status": investigation if investigation in allowed_investigation else "INVESTIGAÇÃO INCONCLUSIVA",
             "exposure": exposure if exposure in allowed_exposure else "HTTP indeterminada",
             "package_status_counts": package_counts, "finding_severity_counts": finding_counts,
+            "container_coverage": container_summary(report.get("coverage", {})),
+            **({"verification": sanitized_verification(report["verification"])} if "verification" in report else {}),
             "log_coverage": {"requested_since": _safe_iso(coverage.get("requested_since")),
                              "requested_until": _safe_iso(coverage.get("requested_until")),
                              "observed_first": _safe_iso(coverage.get("observed_first")),
@@ -117,6 +123,7 @@ def render(report: dict, fmt: str, detailed: bool = False) -> str:
                  f"PHP no hospedeiro: {'sim' if data['php_identified_host'] else 'não identificado'}",
                  f"Vulnerabilidade: {data['vulnerability_status']}", f"Investigação: {data['investigation_status']}",
                  f"Exposição: {data['exposure']}",
+                 "Cobertura de contêineres: " + ", ".join(f"{key}={value}" for key, value in data["container_coverage"].items()),
                  "Pacotes por status: " + ", ".join(f"{key}={value}" for key, value in data["package_status_counts"].items()),
                  "Achados por gravidade: " + ", ".join(f"{key}={value}" for key, value in data["finding_severity_counts"].items()),
                  f"Período solicitado: {data['log_coverage']['requested_since'] or 'não investigado'} a {data['log_coverage']['requested_until'] or 'não investigado'}",
@@ -125,6 +132,10 @@ def render(report: dict, fmt: str, detailed: bool = False) -> str:
                  f"Logs parciais: {data['log_coverage']['files_partial_count']}",
                  f"Achados sem data: {data['log_coverage']['unknown_time_findings']}; limitações: {data['limitations_count']}",
                  data["notice"]]
+        if "verification" in data:
+            lines.extend(["Verificação automatizada: " + data["verification"]["status"],
+                          "Motivos: " + (", ".join(data["verification"]["reason_codes"]) or "nenhum bloqueio automatizado"),
+                          "Teste funcional HTTP não executado; validação manual da aplicação pendente."])
         return "\n".join(lines) + "\n"
     if fmt == "json":
         return json.dumps(report, ensure_ascii=False, indent=2) + "\n"
@@ -174,6 +185,10 @@ def render(report: dict, fmt: str, detailed: bool = False) -> str:
         lines.append(f"- {item}")
     lines.append("Backups: " + (", ".join(report["backups"]) or "nenhum"))
     lines.append("Resultado final: " + report["final_result"])
+    if "verification" in report:
+        lines.append("Verificação automatizada: " + report["verification"]["status"])
+        lines.append("Motivos: " + (", ".join(report["verification"]["reason_codes"]) or "nenhum bloqueio automatizado"))
+        lines.extend(report["tests"])
     lines.append("A ferramenta não substitui investigação forense profissional. Ausência de indicadores não prova ausência de comprometimento.")
     escaped = [heading] + ["".join(c if ord(c) >= 32 and ord(c) not in range(127, 160) else f"\\x{ord(c):02x}" for c in line)
                            for line in lines[1:]]

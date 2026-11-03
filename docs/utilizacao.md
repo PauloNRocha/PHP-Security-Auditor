@@ -40,9 +40,30 @@ python3 -m php_security_auditor.cli verify
 python3 -m php_security_auditor.cli rollback-config --session /caminho/para/sessao
 ```
 
-Em `0.1.0`, `verify` pode retornar código `0` mesmo quando apresenta `VALIDAÇÃO INCOMPLETA`. Leia o resultado e a cobertura; não use esse código isoladamente para aprovar uma atualização ou confirmar segurança. O comando não executa teste HTTP funcional automático. O relatório de auditoria também não contabiliza corretamente todas as limitações aninhadas de contêineres; examine a cobertura detalhada e as limitações estruturadas de `plan`. Consulte os detalhes em [limitações conhecidas](limitacoes.md).
+### Verificação automatizada
 
-O último caminho é um **EXEMPLO**; substitua pelo caminho da sessão criada. `rollback-config` valida o manifesto e informa que esta versão não altera configurações, portanto não há restauração automática. Nunca use downgrade para voltar a uma versão vulnerável.
+No ciclo 0.1.1, `verify` passa a ter o seguinte contrato; os códigos dos outros comandos permanecem inalterados:
+
+| `verification.status` | Critério | Saída |
+|---|---|---|
+| `SATISFATORIO_NO_ESCOPO_AUTOMATIZADO` | Há pacote corrigido avaliável; nenhum pacote vulnerável/indeterminado; cobertura de pacotes, processos e serviços completa; nenhum executável removido, contêiner relacionado não inspecionado ou runtime sem associação comprovada. | `0` |
+| `INCONCLUSIVO` | Cobertura insuficiente, ausência de pacote PHP corrigido avaliável, versão indeterminada ou runtime/contêiner sem comprovação. | `2` |
+| `INSATISFATORIO` | Pacote vulnerável ou executável removido observado. | `2` |
+| `ERRO` | Falha operacional durante a verificação. Falhas anteriores à geração do relatório são informadas em stderr, também com saída `2`. | `2` |
+
+`verify` não executa teste HTTP funcional, não verifica integralmente serviços/módulos/aplicações e não comprova integridade dos executáveis. O campo `http_test_performed` permanece `false`, inclusive com retorno `0`. Esse retorno não aprova uma atualização, não demonstra ausência de comprometimento nem certifica todo o ambiente. Valide a aplicação manualmente.
+
+JSON resumido e detalhado incluem `verification.status`, `verification.reason_codes` e `verification.http_test_performed`. TXT e Markdown apresentam a mesma conclusão e a pendência HTTP. Os motivos estruturados são: `COBERTURA_ESSENCIAL_INCOMPLETA`, `PACOTES_NAO_COMPROVADOS`, `EXECUTAVEL_REMOVIDO`, `RUNTIME_NAO_AVALIADO`, `CONTEINER_NAO_INSPECIONADO`, `AVALIACAO_INDETERMINADA` e `FALHA_ASSOCIACAO_RUNTIME`. Um executável observado precisa de propriedade comprovada por pacote oficial avaliado, sem executar o binário PHP.
+
+Falha de ferramenta opcional de contêiner é uma limitação explícita, sem aprovação da sua cobertura. Nos resumos, `container_coverage` usa somente Docker, Podman e LXC com as categorias `FERRAMENTA_AUSENTE`, `ACESSO_NEGADO`, `CONSULTA_FALHOU`, `COBERTURA_INCOMPLETA`, `SEM_RELACIONADOS_INTERIOR_NAO_INSPECIONADO`, `RELACIONADOS_INTERIOR_NAO_INSPECIONADO`, `INDETERMINADO` ou `NAO_INFORMADO`. A lista detalhada de limitações preserva o contexto de cada mecanismo; `limitations_count` no resumo contabiliza essas entradas sem copiá-las.
+
+**Compatibilidade:** na 0.1.0, `verify` podia retornar `0` com avaliação insuficiente. Scripts que usavam esse retorno incondicional precisam aceitar `2` e ler os novos campos. Nenhum PHP identificado pode produzir `plan=SEM_ACAO/0`, mas não é uma validação PHP aprovada por `verify` (`2`). Os campos anteriores dos relatórios são mantidos; os novos campos JSON são aditivos.
+
+A listagem de contêineres consulta somente os metadados em execução, conforme a documentação de [Docker](https://docs.docker.com/reference/cli/docker/container/ls/) e [Podman](https://docs.podman.io/en/latest/markdown/podman-ps.1.html). Ausência de relacionado não comprova ausência de PHP no interior. Consulte as [limitações conhecidas](limitacoes.md).
+
+### Recuperação de configurações
+
+O caminho `/caminho/para/sessao` no comando `rollback-config` é um **EXEMPLO**; substitua pelo caminho da sessão criada. `rollback-config` valida o manifesto e informa que esta versão não altera configurações, portanto não há restauração automática. Nunca use downgrade para voltar a uma versão vulnerável.
 
 ## Créditos
 

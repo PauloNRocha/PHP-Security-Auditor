@@ -116,28 +116,53 @@ def services(system: System) -> tuple[list[str], str]:
 def containers(system: System) -> tuple[list[dict], dict]:
     found = []
     coverage = {}
+
+    def failure(result) -> str:
+        if result.returncode == 127 and result.stderr == "FileNotFoundError":
+            return "incompleta: ferramenta ausente"
+        if result.returncode == 127 and result.stderr == "PermissionError":
+            return "incompleta: acesso à ferramenta negado"
+        return "incompleta: consulta falhou ou acesso indisponível"
+
+    def observed(related: bool) -> str:
+        return (("contêiner relacionado identificado" if related else "nenhum contêiner relacionado identificado") +
+                " nos metadados em execução; interior não inspecionado")
+
     for engine in ("docker", "podman"):
         result = system.run([engine, "ps", "--format", "{{json .}}"], 8)
         if result.returncode != 0:
-            coverage[engine] = "incompleta: ferramenta ou acesso ao socket indisponível"
+            coverage[engine] = failure(result)
             continue
-        coverage[engine] = "metadados de contêineres em execução; interior não inspecionado"
-        for line in result.stdout.splitlines()[:200]:
+        lines = result.stdout.splitlines()
+        partial = len(lines) > 200
+        related = False
+        for line in lines[:200]:
             try:
                 row = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
+                partial = True
+                continue
+            if not isinstance(row, dict) or not all(isinstance(row.get(key), str) for key in ("Image", "Command")):
+                partial = True
                 continue
             image = str(row.get("Image", ""))[:256]
             command = str(row.get("Command", ""))[:256]
             if "php" in (image + command).lower() or "frankenphp" in image.lower() or "litespeed" in image.lower():
+                related = True
                 found.append({"engine": engine, "id": str(row.get("ID", ""))[:80],
                               "image": image, "status": "INDETERMINADO",
                               "note": "Versão interna e uso HTTP não comprovados."})
+        coverage[engine] = ("incompleta: metadados inválidos ou limite de 200 entradas excedido; interior não inspecionado"
+                            if partial else observed(related))
     result = system.run(["lxc-ls", "--active", "-1"], 8)
-    coverage["lxc"] = ("metadados de contêineres em execução; interior não inspecionado" if result.returncode == 0
-                       else "incompleta: ferramenta ou acesso LXC indisponível")
+    coverage["lxc"] = failure(result) if result.returncode else observed(bool(result.stdout.strip()))
     if result.returncode == 0:
-        for name in result.stdout.splitlines()[:200]:
+        names = result.stdout.splitlines()
+        if len(names) > 200:
+            coverage["lxc"] = "incompleta: limite de 200 entradas excedido; interior não inspecionado"
+        for name in names[:200]:
+            if not name.strip():
+                continue
             found.append({"engine": "lxc", "id": name[:80], "status": "INDETERMINADO",
                           "note": "Presença de PHP no interior não comprovada."})
     return found, coverage

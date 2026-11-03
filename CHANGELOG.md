@@ -2,6 +2,19 @@
 
 Funcionalidades e alterações do PHP Security Auditor por versão, seguindo os princípios do [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## Não lançado
+
+### Corrigido
+
+- `verify` retorna `2` quando a cobertura essencial é insuficiente, há pacote vulnerável/indeterminado, executável removido, contêiner não inspecionado ou runtime sem associação comprovada a pacote avaliado. Falhas operacionais também não retornam sucesso.
+- Relatórios contabilizam limitações aninhadas de Docker, Podman e LXC e distinguem ferramenta ausente, acesso/consulta malsucedida, metadados parciais e ausência de contêiner relacionado. O interior continua não inspecionado.
+
+### Alterado
+
+- O retorno `0` de `verify` passa a indicar resultado satisfatório exclusivamente no escopo automatizado observado, com teste HTTP manual ainda pendente. Automações que aceitavam o retorno incondicional da 0.1.0 precisam revisar esse contrato.
+- JSON de `verify` inclui `verification.status`, `reason_codes` e `http_test_performed=false`; resumos incluem `container_coverage` com categorias controladas. Os formatos TXT e Markdown apresentam as mesmas conclusões, sem expor detalhes privados no resumo.
+- Os estados e códigos de saída de `plan` permanecem inalterados. A remediação operacional continua bloqueada.
+
 ## [0.1.0] — Versão inicial
 
 ### Funcionalidades iniciais

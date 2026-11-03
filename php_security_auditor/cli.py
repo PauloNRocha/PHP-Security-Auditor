@@ -16,6 +16,7 @@ from .remediation import plan, remediate
 from .report import build, render, save
 from .system import System
 from .versions import evaluate
+from .verification import verify_checks
 
 
 def parser() -> argparse.ArgumentParser:
@@ -93,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
         inventory = discover(system)
         assessed = evaluate(inventory["packages"], inventory["os"], system)
     except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        if args.operation == "verify":
+            print("Falha operacional ao descobrir ou avaliar PHP; verificação não concluída.", file=sys.stderr)
+            return 2
         if args.operation != "plan":
             raise
         print(json.dumps(_plan_failure("FALHA_DESCOBERTA_OU_AVALIACAO",
@@ -169,11 +173,12 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError, RuntimeError, PermissionError) as exc:
             print(f"Remediação interrompida: {exc}", file=sys.stderr)
             return 2
-    if args.operation == "verify":
-        stale = [p for p in inventory["processes"] if p["exe"].endswith(" (deleted)")]
-        changes = {"status": "VALIDAÇÃO INCOMPLETA" if stale or not any(p["status"] == "CORRIGIDO" for p in assessed) or any(p["status"] not in ("CORRIGIDO", "NÃO APLICÁVEL") for p in assessed) else "PACOTES CORRIGIDOS; TESTE FUNCIONAL PENDENTE",
-                   "validation": [f"processos com executável removido: {len(stale)}", "Verificar aplicação HTTP manualmente."]}
     report = build(inventory, assessed, investigation, changes)
+    exit_code = 0
+    if args.operation == "verify":
+        changes = verify_checks(system, inventory, assessed, report["vulnerability_status"])
+        exit_code = 0 if changes["verification"]["status"] == "SATISFATORIO_NO_ESCOPO_AUTOMATIZADO" else 2
+        report = build(inventory, assessed, investigation, changes)
     print(render(report, "txt", args.detailed))
     if args.output:
         try:
@@ -182,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             print(f"Falha ao salvar relatório: {exc}", file=sys.stderr)
             return 2
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
