@@ -36,6 +36,7 @@ O workflow `.github/workflows/ci.yml` executa a suíte, a sintaxe Python, a cons
 | Associação de runtimes | Binário e processo em `/srv`, link sem destino, cadeia de alternativas, proprietário oficial, proprietário divergente, resposta ambígua e falha de consulta `dpkg` |
 | Verificação automatizada | Cobertura de `/proc` insuficiente, pacote corrigido/vulnerável/indeterminado, executável removido, runtime sem proprietário comprovado, falha operacional e HTTP explicitamente pendente |
 | Cobertura de contêineres nos relatórios | Ferramenta ausente, consulta/acesso malsucedido, ausência de relacionado, PHP interno indeterminado, indícios válidos preservados em metadados parciais e limite de entradas; contagem e sanitização em TXT/JSON/Markdown |
+| Enumerações e associação compartilhada | PHP após o limite de 200 contêineres; saída parcial com e sem indício; cortes de pacotes, processos e serviços; runtime oficial e destinos não comprovados em `/srv`, `/opt` e `/usr/local`; estados de `audit`, `report`, `verify` e `plan` |
 
 Esses testes automatizados não demonstram funcionamento operacional nas distribuições anunciadas, nem substituem teste de aplicação web e revisão humana de incidente. A execução de `remediate` permanece bloqueada.
 

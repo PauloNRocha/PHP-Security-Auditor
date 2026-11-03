@@ -9,20 +9,24 @@ from pathlib import Path
 
 from . import VERSION
 from .backup import _secure_mkdirs
-from .discovery import PHP_NAMES
-from .coverage import container_summary, coverage_limitations
+from .discovery import FPM_SERVICE, PHP_NAMES
+from .coverage import container_enumeration_incomplete, container_summary, coverage_limitations
 from .verification import sanitized_verification
 
 
 def build(inventory: dict, assessed: list[dict], investigation: dict | None,
-          changes: dict | None = None) -> dict:
-    unknown_runtime = bool((inventory["host_php"] and not any(p["status"] != "NÃO APLICÁVEL" for p in assessed)) or inventory["containers"] or
-                           any(isinstance(value, str) and "incompleta" in value for value in inventory["coverage"].values()) or
-                           any(str(b.get(key, "")).startswith(("/usr/local/", "/opt/"))
-                               for b in inventory["binaries"] for key in ("path", "target")) or
-                           any(PHP_NAMES.match(p.get("name", "")) and
-                               str(p.get("exe", "")).startswith(("/usr/local/", "/opt/"))
-                               for p in inventory["processes"]))
+          changes: dict | None = None, runtime_state: str | None = None) -> dict:
+    observed_runtime = bool(inventory["binaries"] or
+                            any(PHP_NAMES.match(p.get("name", "")) for p in inventory["processes"]) or
+                            any(FPM_SERVICE.search(service.lower()) or
+                                any(name in service.lower() for name in ("frankenphp", "lsphp", "php-cgi"))
+                                for service in inventory["services"]))
+    association = runtime_state
+    unknown_runtime = bool((inventory["host_php"] and not any(p["status"] != "NÃO APLICÁVEL" for p in assessed)) or
+                           inventory["containers"] or container_enumeration_incomplete(inventory["coverage"]) or
+                           any(isinstance(value, str) and "incompleta" in value
+                               for value in inventory["coverage"].values()) or
+                           (association != "COMPROVADO" and (observed_runtime or association is not None)))
     statuses = {p["status"] for p in assessed}
     if "VULNERÁVEL" in statuses:
         status = "VULNERÁVEL"

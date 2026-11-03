@@ -10,9 +10,9 @@ from pathlib import Path
 from . import VERSION
 from .backup import BackupSession, validate_manifest
 from . import remediation as remediation_module
-from .discovery import PHP_NAMES, discover
+from .discovery import discover
 from .forensics import investigate
-from .remediation import plan, remediate
+from .remediation import plan, remediate, runtime_association
 from .report import build, render, save
 from .system import System
 from .versions import evaluate
@@ -45,18 +45,10 @@ def remediation_blockers(investigation: dict | None) -> list[str]:
     return blocked
 
 
-def _runtime_needs_investigation(inventory: dict, assessed: list[dict]) -> bool:
+def _runtime_needs_investigation(assessed: list[dict], runtime_state: str | None) -> bool:
     if any(p["status"] in ("VULNERÁVEL", "INDETERMINADO") for p in assessed):
         return True
-    binaries = inventory["binaries"]
-    running_php = any(PHP_NAMES.match(p.get("name", "")) for p in inventory["processes"])
-    assessed_runtime = any(p["status"] != "NÃO APLICÁVEL" for p in assessed)
-    manual_binary = any(str(b.get(key, "")).startswith(("/usr/local/", "/opt/"))
-                        for b in binaries for key in ("path", "target"))
-    manual_process = any(PHP_NAMES.match(p.get("name", "")) and
-                         str(p.get("exe", "")).startswith(("/usr/local/", "/opt/"))
-                         for p in inventory["processes"])
-    return bool(manual_binary or manual_process or ((binaries or running_php) and not assessed_runtime))
+    return runtime_state in ("NAO_COMPROVADO", "ERRO")
 
 
 def _plan_failure(code: str, message: str, inventory: dict | None = None) -> dict:
@@ -102,7 +94,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(_plan_failure("FALHA_DESCOBERTA_OU_AVALIACAO",
                                        "Falha operacional ao descobrir ou avaliar PHP."), ensure_ascii=False, indent=2))
         return 2
-    potentially_vulnerable = _runtime_needs_investigation(inventory, assessed)
+    runtime_state = runtime_association(system, inventory, assessed) if args.operation != "plan" else None
+    potentially_vulnerable = _runtime_needs_investigation(assessed, runtime_state)
     investigation = investigate(inventory, args.days) if inventory["host_php"] and potentially_vulnerable and args.operation in ("audit", "report", "remediate") else None
     changes = None
     if args.preserve and investigation:
@@ -127,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             interactive = not args.non_interactive and sys.stdin.isatty()
             print("REVISÃO PRÉVIA PRIVADA — avalie vulnerabilidade, investigação, achados, limites e evidências."
                   if interactive else "RESUMO PRÉVIO — modo não interativo, atualização bloqueada.", flush=True)
-            print(render(build(inventory, assessed, investigation, changes), "txt", detailed=interactive), flush=True)
+            print(render(build(inventory, assessed, investigation, changes, runtime_state), "txt", detailed=interactive), flush=True)
             if interactive:
                 print("Evidências: " + ("preservadas na sessão informada acima" if changes and changes.get("backup") else
                                        "preservação pendente; use audit --preserve antes de qualquer mudança"), flush=True)
@@ -135,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Remediação exige revisão em terminal interativo e não está liberada nesta versão.", file=sys.stderr)
                 return 2
         try:
-            proposed = plan(system, inventory, assessed)
+            proposed = plan(system, inventory, assessed, runtime_state)
         except (OSError, ValueError, RuntimeError, KeyError, TypeError):
             if args.operation != "plan":
                 raise
@@ -173,12 +166,12 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError, RuntimeError, PermissionError) as exc:
             print(f"Remediação interrompida: {exc}", file=sys.stderr)
             return 2
-    report = build(inventory, assessed, investigation, changes)
+    report = build(inventory, assessed, investigation, changes, runtime_state)
     exit_code = 0
     if args.operation == "verify":
-        changes = verify_checks(system, inventory, assessed, report["vulnerability_status"])
+        changes = verify_checks(system, inventory, assessed, report["vulnerability_status"], runtime_state)
         exit_code = 0 if changes["verification"]["status"] == "SATISFATORIO_NO_ESCOPO_AUTOMATIZADO" else 2
-        report = build(inventory, assessed, investigation, changes)
+        report = build(inventory, assessed, investigation, changes, runtime_state)
     print(render(report, "txt", args.detailed))
     if args.output:
         try:

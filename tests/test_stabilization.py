@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -19,7 +20,8 @@ def corrected_inventory():
 
 
 class StabilizationTests(unittest.TestCase):
-    def invoke(self, found, assessed, operation="verify", outputs=None, detailed=False):
+    def invoke(self, found, assessed, operation="verify", outputs=None, detailed=False,
+               investigate_expected=False):
         system = FakeSystem(outputs)
         output = io.StringIO()
         captured = []
@@ -32,12 +34,15 @@ class StabilizationTests(unittest.TestCase):
              patch.object(cli, "discover", return_value=found), \
              patch.object(cli, "evaluate", return_value=assessed), \
              patch.object(cli, "save", side_effect=capture), \
-             patch.object(cli, "investigate") as investigation, \
+             patch.object(cli, "investigate", return_value=None) as investigation, \
              patch.object(cli, "remediate") as update, \
              contextlib.redirect_stdout(output):
             code = cli.main([operation, "--output", "/destino-sintetico"] +
                             (["--detailed"] if detailed else []))
-        investigation.assert_not_called()
+        if investigate_expected:
+            investigation.assert_called_once()
+        else:
+            investigation.assert_not_called()
         update.assert_not_called()
         return code, captured[0], output.getvalue(), system.calls
 
@@ -151,7 +156,7 @@ class StabilizationTests(unittest.TestCase):
 
     def test_verify_falha_operacional_de_associacao(self):
         found, assessed = corrected_inventory()
-        with patch.object(verification, "_unmatched_runtime", side_effect=OSError("PRIVATE_MARKER")):
+        with patch.object(remediation, "_unmatched_runtime", side_effect=OSError("PRIVATE_MARKER")):
             code, data, output, _ = self.invoke(found, assessed)
         self.assertEqual((code, data["verification"]["status"]), (2, "ERRO"))
         self.assertNotIn("PRIVATE_MARKER", output)
@@ -315,6 +320,271 @@ class StabilizationTests(unittest.TestCase):
         self.assertEqual((code, data["vulnerability_status"]), (0, "NÃO APLICÁVEL"))
         for engine in ("docker", "podman", "lxc"):
             self.assertTrue(any(engine in note for note in data["limitations"]))
+
+    def test_php_apos_limite_de_conteineres_nao_aprova_avaliacao(self):
+        rows = [json.dumps({"ID": str(index), "Image": "nginx", "Command": "nginx"})
+                for index in range(200)]
+        rows.append(json.dumps({"ID": "php", "Image": "php:8.5", "Command": "php-fpm"}))
+        for engine in ("docker", "podman"):
+            with self.subTest(engine=engine):
+                outputs = {("docker", "ps", "--format", "{{json .}}"): (0, "", ""),
+                           ("podman", "ps", "--format", "{{json .}}"): (0, "", ""),
+                           ("lxc-ls", "--active", "-1"): (0, "", "")}
+                outputs[(engine, "ps", "--format", "{{json .}}")] = (0, "\n".join(rows), "")
+                containers, coverage = discovery.containers(FakeSystem(outputs))
+                found, assessed = corrected_inventory()
+                found["containers"] = containers
+                found["coverage"]["contêineres"] = coverage
+                for operation in ("audit", "report", "verify"):
+                    code, data, _, _ = self.invoke(found, assessed, operation)
+                    self.assertEqual(data["vulnerability_status"], "INDETERMINADO")
+                    self.assertEqual(code, 2 if operation == "verify" else 0)
+                output = io.StringIO()
+                with patch.object(cli, "System", return_value=FakeSystem()), \
+                     patch.object(cli, "discover", return_value=found), \
+                     patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+                    self.assertEqual(cli.main(["plan"]), 2)
+                self.assertEqual(json.loads(output.getvalue())["status"], "INCONCLUSIVO")
+
+    def test_runtime_srv_sem_posse_nao_recebe_corrigido(self):
+        found, assessed = corrected_inventory()
+        found["binaries"] = [{"path": "/usr/bin/php", "target": "/srv/php/bin/php"}]
+        self.assertEqual(report.build(found, assessed, None)["vulnerability_status"], "INDETERMINADO")
+
+    def test_pacote_apos_limite_nao_mantem_cobertura_completa(self):
+        first = "php8.5-cli\t8.5.4-0ubuntu1.5\tinstall ok installed\tphp8.5\n"
+        ordinary = "outro-pacote\t1\tinstall ok installed\toutro-pacote\n"
+        last = "php8.4-fpm\t8.4.20\tinstall ok installed\tphp8.4\n"
+        class PackageSystem:
+            def run(self, args, timeout=10):
+                return subprocess.CompletedProcess(args, 0, first + ordinary * 29999 + last, "")
+        with patch.object(discovery, "package_origin") as origin:
+            packages, coverage = discovery.packages(PackageSystem(), {"id": "ubuntu"})
+        origin.assert_not_called()
+        self.assertEqual([item["name"] for item in packages], ["php8.5-cli"])
+        self.assertIn("incompleta", coverage)
+        entry = dict(packages[0], status="CORRIGIDO", fixed=packages[0]["version"])
+        found, _ = corrected_inventory()
+        found["packages"] = packages
+        found["coverage"]["pacotes"] = coverage
+        for operation in ("audit", "report", "verify"):
+            code, data, _, _ = self.invoke(found, [entry], operation)
+            self.assertEqual(data["vulnerability_status"], "INDETERMINADO")
+            self.assertEqual(code, 2 if operation == "verify" else 0)
+        output = io.StringIO()
+        with patch.object(cli, "System", return_value=FakeSystem()), \
+             patch.object(cli, "discover", return_value=found), \
+             patch.object(cli, "evaluate", return_value=[entry]), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["plan"]), 2)
+        self.assertEqual(json.loads(output.getvalue())["reason_code"], "COBERTURA_ESSENCIAL_INCOMPLETA")
+
+    def test_listagens_parciais_e_completas_de_conteineres(self):
+        ordinary = json.dumps({"ID": "ordinary", "Image": "nginx", "Command": "nginx"})
+        related = json.dumps({"ID": "PRIVATE_MARKER", "Image": "php:8.5", "Command": "php-fpm"})
+        cases = (
+            ("exatamente 200", 0, "\n".join([ordinary] * 200), 0, "CORRIGIDO", "SEM_ACAO"),
+            ("invalido sem PHP", 0, ordinary + "\nnot-json", 0, "INDETERMINADO", "INCONCLUSIVO"),
+            ("PHP seguido de invalido", 0, related + "\nnot-json", 1, "INDETERMINADO", "INCONCLUSIVO"),
+            ("interrompido com PHP", 124, related + "\n", 1, "INDETERMINADO", "INCONCLUSIVO"),
+            ("interrompido sem PHP", 124, ordinary + "\n", 0, "INDETERMINADO", "INCONCLUSIVO"),
+            ("ferramenta ausente", 127, "", 0, "CORRIGIDO", "SEM_ACAO"),
+            ("PHP sem versão interna", 0, related + "\n", 1, "INDETERMINADO", "INCONCLUSIVO"),
+        )
+        for label, code, stdout, count, status, plan_status in cases:
+            with self.subTest(case=label):
+                outputs = {("docker", "ps", "--format", "{{json .}}"): (code, stdout, "FileNotFoundError" if code == 127 else ""),
+                           ("podman", "ps", "--format", "{{json .}}"): (0, "", ""),
+                           ("lxc-ls", "--active", "-1"): (0, "", "")}
+                containers, coverage = discovery.containers(FakeSystem(outputs))
+                self.assertEqual(len(containers), count)
+                found, assessed = corrected_inventory()
+                found["containers"] = containers
+                found["coverage"]["contêineres"] = coverage
+                for operation in ("audit", "report", "verify"):
+                    result, data, _, _ = self.invoke(found, assessed, operation)
+                    self.assertEqual(data["vulnerability_status"], status)
+                    self.assertEqual(result, 2 if operation == "verify" and status == "INDETERMINADO" else 0)
+                    for fmt in ("txt", "json", "md"):
+                        self.assertNotIn("PRIVATE_MARKER", report.render(data, fmt))
+                output = io.StringIO()
+                with patch.object(cli, "System", return_value=FakeSystem()), \
+                     patch.object(cli, "discover", return_value=found), \
+                     patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+                    self.assertEqual(cli.main(["plan"]), 2 if plan_status == "INCONCLUSIVO" else 0)
+                self.assertEqual(json.loads(output.getvalue())["status"], plan_status)
+
+    def test_runtime_sem_proprietario_e_oficial_em_todos_os_fluxos(self):
+        for target, owner, expected in (("/usr/bin/php8.4", "php8.4-fpm", "CORRIGIDO"),
+                                        ("/srv/php/bin/php", None, "INDETERMINADO"),
+                                        ("/opt/php/bin/php", None, "INDETERMINADO"),
+                                        ("/usr/local/php/bin/php", None, "INDETERMINADO")):
+            with self.subTest(target=target):
+                found, assessed = corrected_inventory()
+                found["binaries"] = [{"path": "/usr/bin/php", "target": target, "symlink": True}]
+                outputs = dpkg_ownership(target, owner)
+                for operation in ("audit", "report", "verify"):
+                    code, data, _, calls = self.invoke(found, assessed, operation, outputs,
+                        investigate_expected=expected == "INDETERMINADO" and operation != "verify")
+                    self.assertEqual(data["vulnerability_status"], expected)
+                    self.assertEqual(code, 2 if expected == "INDETERMINADO" and operation == "verify" else 0)
+                    self.assertEqual(sum(call[0] == "dpkg-query" for call in calls), 1)
+                    self.assertEqual(json.loads(report.render(data, "json"))["vulnerability_status"], expected)
+                output = io.StringIO()
+                with patch.object(cli, "System", return_value=FakeSystem(outputs)), \
+                     patch.object(cli, "discover", return_value=found), \
+                     patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+                    plan_code = cli.main(["plan"])
+                self.assertEqual(plan_code, 2 if expected == "INDETERMINADO" else 0)
+                self.assertEqual(json.loads(output.getvalue())["status"],
+                                 "INCONCLUSIVO" if expected == "INDETERMINADO" else "SEM_ACAO")
+
+    def test_limite_de_processos_reduz_cobertura_essencial(self):
+        class SyntheticPid:
+            def __init__(self, number, field=""):
+                self.name, self.field = str(number), field
+            def __truediv__(self, field):
+                return SyntheticPid(self.name, field)
+            def read_text(self, **_kwargs):
+                return "worker" if self.field == "comm" else "PPid: 1\nUid: 0\nState: S\n"
+        with patch.object(discovery.Path, "iterdir", return_value=(SyntheticPid(i) for i in range(1, 10002))), \
+             patch.object(discovery.os, "readlink", return_value="/usr/bin/worker"):
+            processes, coverage = discovery.processes()
+        self.assertEqual(len(processes), 10000)
+        self.assertIn("incompleta", coverage)
+        found, assessed = corrected_inventory()
+        found["processes"] = processes
+        found["coverage"]["processos"] = coverage
+        for operation in ("audit", "report", "verify"):
+            code, data, _, _ = self.invoke(found, assessed, operation)
+            self.assertEqual(data["vulnerability_status"], "INDETERMINADO")
+            self.assertEqual(code, 2 if operation == "verify" else 0)
+        output = io.StringIO()
+        with patch.object(cli, "System", return_value=FakeSystem()), \
+             patch.object(cli, "discover", return_value=found), \
+             patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["plan"]), 2)
+        self.assertEqual(json.loads(output.getvalue())["reason_code"], "COBERTURA_ESSENCIAL_INCOMPLETA")
+
+    def test_limite_de_servicos_reduz_cobertura_essencial(self):
+        lines = ["unrelated.service loaded active running" for _ in range(3000)]
+        lines.append("php8.5-fpm.service loaded active running")
+        class ServiceSystem:
+            def run(self, args, timeout=10):
+                return subprocess.CompletedProcess(args, 0, "\n".join(lines), "")
+        services, coverage = discovery.services(ServiceSystem())
+        self.assertEqual(services, [])
+        self.assertIn("incompleta", coverage)
+        found, assessed = corrected_inventory()
+        found["services"] = services
+        found["coverage"]["serviços"] = coverage
+        for operation in ("audit", "report", "verify"):
+            code, data, _, _ = self.invoke(found, assessed, operation)
+            self.assertEqual(data["vulnerability_status"], "INDETERMINADO")
+            self.assertEqual(code, 2 if operation == "verify" else 0)
+        output = io.StringIO()
+        with patch.object(cli, "System", return_value=FakeSystem()), \
+             patch.object(cli, "discover", return_value=found), \
+             patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["plan"]), 2)
+        self.assertEqual(json.loads(output.getvalue())["reason_code"], "COBERTURA_ESSENCIAL_INCOMPLETA")
+
+    def test_destino_indeterminado_e_falha_dpkg_nao_comprovam_runtime(self):
+        for target, outputs in (("indeterminado", {}),
+                                ("/srv/php/bin/php", {("dpkg-query", "--search", "--", "/srv/php/bin/php"):
+                                                        (124, "", "Tempo limite excedido")})):
+            with self.subTest(target=target):
+                found, assessed = corrected_inventory()
+                found["binaries"] = [{"path": "/usr/bin/php", "target": target, "symlink": True}]
+                for operation in ("audit", "report", "verify"):
+                    code, data, _, _ = self.invoke(found, assessed, operation, outputs,
+                        investigate_expected=operation != "verify")
+                    self.assertEqual(data["vulnerability_status"], "INDETERMINADO")
+                    self.assertEqual(code, 2 if operation == "verify" else 0)
+                output = io.StringIO()
+                with patch.object(cli, "System", return_value=FakeSystem(outputs)), \
+                     patch.object(cli, "discover", return_value=found), \
+                     patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+                    self.assertEqual(cli.main(["plan"]), 2)
+                self.assertEqual(json.loads(output.getvalue())["reason_code"], "RUNTIME_NAO_AVALIADO")
+
+    def test_pacote_vulneravel_prevalece_sobre_runtime_desconhecido(self):
+        found, assessed = corrected_inventory()
+        assessed[0]["status"] = "VULNERÁVEL"
+        found["binaries"] = [{"path": "/usr/bin/php", "target": "/srv/php/bin/php"}]
+        outputs = dpkg_ownership("/srv/php/bin/php")
+        for operation in ("audit", "report", "verify"):
+            code, data, _, _ = self.invoke(found, assessed, operation, outputs,
+                investigate_expected=operation != "verify")
+            self.assertEqual(data["vulnerability_status"], "VULNERÁVEL")
+            self.assertEqual(code, 2 if operation == "verify" else 0)
+        output = io.StringIO()
+        with patch.object(cli, "System", return_value=FakeSystem(outputs)), \
+             patch.object(cli, "discover", return_value=found), \
+             patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["plan"]), 2)
+        self.assertEqual(json.loads(output.getvalue())["status"], "INCONCLUSIVO")
+
+    def test_saida_parcial_de_pacotes_e_servicos_preserva_indicios(self):
+        class PartialSystem:
+            def run(self, args, timeout=10):
+                if args[0] == "dpkg-query":
+                    return subprocess.CompletedProcess(args, 124,
+                        "php8.5-cli\t8.5.4-0ubuntu1.5\tinstall ok installed\tphp8.5\n", "timeout")
+                return subprocess.CompletedProcess(args, 124,
+                    "php8.5-fpm.service loaded active running\n", "timeout")
+        with patch.object(discovery, "package_origin") as origin:
+            packages, pkg_coverage = discovery.packages(PartialSystem(), {"id": "ubuntu"})
+        origin.assert_not_called()
+        services, svc_coverage = discovery.services(PartialSystem())
+        self.assertEqual([item["name"] for item in packages], ["php8.5-cli"])
+        self.assertEqual(services, ["php8.5-fpm.service"])
+        self.assertIn("incompleta", pkg_coverage)
+        self.assertIn("incompleta", svc_coverage)
+
+    def test_executavel_removido_nao_php_nao_altera_associacao_php(self):
+        found, assessed = corrected_inventory()
+        found["processes"] = [{"pid": 321, "name": "nginx", "exe": "/usr/sbin/nginx (deleted)", "state": "S"}]
+        code, data, _, _ = self.invoke(found, assessed, "report")
+        self.assertEqual((code, data["vulnerability_status"]), (0, "CORRIGIDO"))
+        code, data, _, _ = self.invoke(found, assessed, "verify")
+        self.assertEqual((code, data["verification"]["status"]), (2, "INSATISFATORIO"))
+        self.assertIn("EXECUTAVEL_REMOVIDO", data["verification"]["reason_codes"])
+        self.assertNotIn("RUNTIME_NAO_AVALIADO", data["verification"]["reason_codes"])
+        output = io.StringIO()
+        with patch.object(cli, "System", return_value=FakeSystem()), \
+             patch.object(cli, "discover", return_value=found), \
+             patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["plan"]), 0)
+        self.assertEqual(json.loads(output.getvalue())["status"], "SEM_ACAO")
+
+    def test_servico_php_isolado_e_indicio_de_runtime(self):
+        with patch.object(discovery, "os_release", return_value={"id": "ubuntu", "version": "26.04"}), \
+             patch.object(discovery, "packages", return_value=([], "completa")), \
+             patch.object(discovery, "processes", return_value=([], "completa")), \
+             patch.object(discovery, "services", return_value=(["php8.5-fpm.service"], "completa")), \
+             patch.object(discovery, "containers", return_value=([], {})), \
+             patch.object(discovery, "binaries", return_value=[]):
+            found = discovery.discover(FakeSystem())
+        self.assertTrue(found["host_php"])
+        self.assertEqual(found["exposure"], "HTTP indeterminada")
+        code, data, _, _ = self.invoke(found, [], "audit", investigate_expected=True)
+        self.assertEqual((code, data["vulnerability_status"]), (0, "INDETERMINADO"))
+        output = io.StringIO()
+        with patch.object(cli, "System", return_value=FakeSystem()), \
+             patch.object(cli, "discover", return_value=found), \
+             patch.object(cli, "evaluate", return_value=[]), contextlib.redirect_stdout(output):
+            self.assertEqual(cli.main(["plan"]), 2)
+        self.assertEqual(json.loads(output.getvalue())["reason_code"], "RUNTIME_NAO_AVALIADO")
+
+    def test_cobertura_parcial_nao_sugere_uso_exclusivo_cli(self):
+        with patch.object(discovery, "os_release", return_value={"id": "ubuntu", "version": "26.04"}), \
+             patch.object(discovery, "packages", return_value=([php_package("CORRIGIDO")], "completa")), \
+             patch.object(discovery, "processes", return_value=([], "completa")), \
+             patch.object(discovery, "services", return_value=([], "incompleta: limite de 3000 serviços excedido")), \
+             patch.object(discovery, "containers", return_value=([], {})), \
+             patch.object(discovery, "binaries", return_value=[]):
+            found = discovery.discover(FakeSystem())
+        self.assertEqual(found["exposure"], "HTTP indeterminada")
 
 
 if __name__ == "__main__":

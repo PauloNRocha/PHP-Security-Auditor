@@ -8,7 +8,7 @@ Limites: a inspeção de contêiner é por metadados locais e não entra neles; 
 
 Os módulos `system`, `discovery`, `versions`, `forensics`, `backup`, `remediation`, `report` e `cli` isolam responsabilidades. A camada `System` é injetável nos testes. Saídas externas, paths, logs e metadados são tratados como dados não confiáveis. Leitura de evidências tem limites de bytes/arquivos, recusa links simbólicos e mantém apenas metadados e indicadores mínimos nos relatórios.
 
-`coverage.py` reúne a apresentação das limitações aninhadas, compartilhada por relatórios e planejamento. `verification.py` classifica as verificações automatizadas e usa a mesma comprovação de propriedade de executáveis do planejamento. O resultado de `verify` é independente do status de vulnerabilidade dos pacotes; nenhum desses resultados comprova teste HTTP funcional.
+`coverage.py` reúne a apresentação das limitações aninhadas, compartilhada por relatórios e planejamento. `verification.py` produz uma classificação própria que considera o status dos pacotes, a cobertura e os runtimes observados. Auditoria, planejamento e verificação compartilham a comprovação de propriedade dos executáveis; essa verificação não substitui a avaliação de vulnerabilidades nem comprova teste HTTP funcional. Na execução da CLI, a associação é consultada uma vez e reutilizada pelos resultados aplicáveis.
 
 ## Créditos
 

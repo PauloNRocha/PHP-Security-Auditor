@@ -102,7 +102,7 @@ Para `plan`, o código de saída é `0` nos estados `PLANO_DISPONIVEL` e `SEM_AC
 ## Limitações conhecidas
 
 - `verify` retorna `0` somente quando as verificações automatizadas dos pacotes e runtimes observados são satisfatórias; resultados insuficientes ou falhas retornam `2`. Não executa teste HTTP funcional nem confirma a segurança de todo o ambiente. Veja o [contrato de verificação](docs/utilizacao.md#verificação-automatizada).
-- Limitações de contêineres aparecem nos relatórios; indisponibilidade de um mecanismo opcional não comprova vulnerabilidade nem ausência de contêineres. O interior dos contêineres não é inspecionado.
+- Limitações de contêineres aparecem nos relatórios; listagens parciais impedem conclusão favorável, enquanto indisponibilidade de um mecanismo opcional permanece uma limitação explícita. O interior dos contêineres não é inspecionado.
 - A descoberta de instalações e a triagem de evidências não são exaustivas. Logs grandes, dados indisponíveis e limites de leitura podem deixar lacunas.
 - Metadados APT e propriedade de arquivos por pacote não comprovam a integridade dos bytes instalados.
 

@@ -1,16 +1,18 @@
 """Resultado limitado às verificações automatizadas, sem teste HTTP."""
 from __future__ import annotations
 
-from .remediation import _unmatched_runtime
+from .coverage import container_enumeration_incomplete
+from .remediation import runtime_association
 from .system import System
 
 STATUSES = {"SATISFATORIO_NO_ESCOPO_AUTOMATIZADO", "INCONCLUSIVO", "INSATISFATORIO", "ERRO"}
 REASONS = {"COBERTURA_ESSENCIAL_INCOMPLETA", "PACOTES_NAO_COMPROVADOS", "EXECUTAVEL_REMOVIDO",
            "RUNTIME_NAO_AVALIADO", "CONTEINER_NAO_INSPECIONADO", "AVALIACAO_INDETERMINADA",
-           "FALHA_ASSOCIACAO_RUNTIME"}
+           "FALHA_ASSOCIACAO_RUNTIME", "COBERTURA_CONTEINER_INCOMPLETA"}
 
 
-def verify_checks(system: System, inventory: dict, assessed: list[dict], status: str) -> dict:
+def verify_checks(system: System, inventory: dict, assessed: list[dict], status: str,
+                  runtime_state: str | None = None) -> dict:
     reasons = []
     coverage = inventory.get("coverage", {})
     if any(coverage.get(source) != "completa" for source in ("pacotes", "processos", "serviços")):
@@ -23,15 +25,16 @@ def verify_checks(system: System, inventory: dict, assessed: list[dict], status:
         reasons.append("EXECUTAVEL_REMOVIDO")
     if inventory.get("containers"):
         reasons.append("CONTEINER_NAO_INSPECIONADO")
+    if container_enumeration_incomplete(coverage):
+        reasons.append("COBERTURA_CONTEINER_INCOMPLETA")
     if status == "INDETERMINADO":
         reasons.append("AVALIACAO_INDETERMINADA")
     # Usa a mesma comprovação de propriedade exigida pelo planejamento. Não executa PHP.
-    if not reasons:
-        try:
-            if _unmatched_runtime(system, inventory, assessed):
-                reasons.append("RUNTIME_NAO_AVALIADO")
-        except (OSError, ValueError, RuntimeError):
-            reasons.append("FALHA_ASSOCIACAO_RUNTIME")
+    association = runtime_state if runtime_state is not None else runtime_association(system, inventory, assessed)
+    if association == "ERRO":
+        reasons.append("FALHA_ASSOCIACAO_RUNTIME")
+    elif association != "COMPROVADO":
+        reasons.append("RUNTIME_NAO_AVALIADO")
     result = ("ERRO" if "FALHA_ASSOCIACAO_RUNTIME" in reasons else
               "INSATISFATORIO" if stale or any(p["status"] == "VULNERÁVEL" for p in assessed) else
               "INCONCLUSIVO" if reasons else "SATISFATORIO_NO_ESCOPO_AUTOMATIZADO")

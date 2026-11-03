@@ -8,12 +8,14 @@ Funcionalidades e alterações do PHP Security Auditor por versão, seguindo os 
 
 - `verify` retorna `2` quando a cobertura essencial é insuficiente, há pacote vulnerável/indeterminado, executável removido, contêiner não inspecionado ou runtime sem associação comprovada a pacote avaliado. Falhas operacionais também não retornam sucesso.
 - Relatórios contabilizam limitações aninhadas de Docker, Podman e LXC e distinguem ferramenta ausente, acesso/consulta malsucedida, metadados parciais e ausência de contêiner relacionado. Indícios de PHP em campos válidos são preservados mesmo se outros campos estiverem inválidos. O interior continua não inspecionado.
+- Enumerações interrompidas ou limitadas de contêineres não sustentam conclusão favorável; indícios presentes na saída parcial são mantidos. Limites de linhas de pacotes, processos e serviços reduzem a cobertura declarada.
+- A classificação geral considera a propriedade comprovada dos executáveis PHP observados, inclusive destinos fora dos caminhos usuais. Serviços PHP identificados sem pacote ou processo correspondente passam a ser tratados como indício de runtime. Pacote vulnerável identificado continua prevalecendo na classificação.
 
 ### Alterado
 
 - O retorno `0` de `verify` passa a indicar resultado satisfatório exclusivamente no escopo automatizado observado, com teste HTTP manual ainda pendente. Automações que aceitavam o retorno incondicional da 0.1.0 precisam revisar esse contrato.
 - JSON de `verify` inclui `verification.status`, `reason_codes` e `http_test_performed=false`; resumos incluem `container_coverage` com categorias controladas. Os formatos TXT e Markdown apresentam as mesmas conclusões, sem expor detalhes privados no resumo.
-- Os estados e códigos de saída de `plan` permanecem inalterados. A remediação operacional continua bloqueada.
+- Os estados e códigos de saída de `plan` permanecem; enumeração comprovadamente parcial pode agora resultar em `INCONCLUSIVO`/`2`, com motivo estruturado. A remediação operacional continua bloqueada.
 
 ## [0.1.0] — Versão inicial
 

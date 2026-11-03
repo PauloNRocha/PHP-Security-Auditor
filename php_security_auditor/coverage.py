@@ -18,6 +18,18 @@ def coverage_limitations(coverage: dict) -> list[str]:
     return notes
 
 
+def container_enumeration_incomplete(coverage: dict) -> bool:
+    """Uma listagem iniciada e incompleta não comprova ausência de PHP."""
+    engines = coverage.get("contêineres", {})
+    if not isinstance(engines, dict):
+        return True
+    unavailable = ("incompleta: ferramenta", "incompleta: acesso à ferramenta negado",
+                   "incompleta: consulta falhou")
+    return any(not isinstance(value, str) or
+               (value.startswith("incompleta:") and not value.startswith(unavailable))
+               for value in engines.values())
+
+
 def container_summary(coverage: dict) -> dict[str, str]:
     """Lista positiva: não copia texto ou identificadores do hospedeiro."""
     engines = coverage.get("contêineres", {})
