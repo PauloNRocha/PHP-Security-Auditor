@@ -37,18 +37,24 @@ def _kernel_thread(path: Path, status: str) -> bool:
 
 def packages(system: System, distro: dict) -> tuple[list[dict], str]:
     result = system.run(["dpkg-query", "-W", "-f=${binary:Package}\t${Version}\t${Status}\t${source:Package}\n"], 15)
-    if result.returncode != 0:
-        return [], "incompleta: dpkg-query indisponível ou falhou"
     entries = []
-    for line in result.stdout.splitlines()[:30000]:
+    lines = result.stdout.splitlines()
+    partial = result.returncode != 0 or len(lines) > 30000 or len(result.stdout) >= 2_000_000
+    for line in lines[:30000]:
         parts = line.split("\t")
         if len(parts) != 4 or parts[2] != "install ok installed":
             continue
         name = parts[0].split(":", 1)[0]
         if PHP_PACKAGE.fullmatch(name):
             entries.append({"name": name, "version": parts[1], "source_package": parts[3],
-                            "origin": package_origin(system, name, parts[1], distro["id"])})
-    return entries, "completa" if len(result.stdout) < 2_000_000 else "incompleta: saída truncada"
+                            "origin": "não comprovada" if partial else package_origin(system, name, parts[1], distro["id"])})
+    if result.returncode != 0:
+        coverage = "incompleta: dpkg-query indisponível, interrompido ou falhou"
+    elif partial:
+        coverage = "incompleta: limite de linhas ou saída truncada"
+    else:
+        coverage = "completa"
+    return entries, coverage
 
 
 def binaries() -> list[dict]:
@@ -70,10 +76,11 @@ def processes() -> tuple[list[dict], str]:
     denied = 0
     proc = Path("/proc")
     try:
-        pids = [p for p in proc.iterdir() if p.name.isdigit()][:10000]
+        pids = list(islice((p for p in proc.iterdir() if p.name.isdigit()), 10001))
     except OSError:
         return [], "incompleta: /proc indisponível"
-    for path in pids:
+    limited = len(pids) > 10000
+    for path in pids[:10000]:
         try:
             comm = (path / "comm").read_text(errors="replace").strip()
             status = (path / "status").read_text(errors="replace")[:16384]
@@ -97,47 +104,82 @@ def processes() -> tuple[list[dict], str]:
             continue  # Processo encerrado durante a coleta.
         except OSError:
             denied += 1
-    return output, "incompleta: acesso limitado ao /proc" if denied else "completa"
+    return output, ("incompleta: acesso limitado ao /proc" if denied else
+                    "incompleta: limite de 10000 processos excedido" if limited else "completa")
 
 
 def services(system: System) -> tuple[list[str], str]:
     result = system.run(["systemctl", "list-units", "--type=service", "--state=running",
                          "--no-legend", "--plain"], 8)
-    if result.returncode != 0:
-        return [], "incompleta: systemd indisponível"
     names = []
-    for line in result.stdout.splitlines()[:3000]:
+    lines = result.stdout.splitlines()
+    for line in lines[:3000]:
         name = line.split(maxsplit=1)[0] if line.split() else ""
         if any(token in name.lower() for token in WEB_NAMES) or FPM_SERVICE.search(name.lower()):
             names.append(name)
-    return names, "completa"
+    if result.returncode != 0:
+        coverage = ("incompleta: enumeração de serviços interrompida" if result.stdout or result.returncode == 124
+                    else "incompleta: systemd indisponível")
+    elif len(lines) > 3000:
+        coverage = "incompleta: limite de 3000 serviços excedido"
+    else:
+        coverage = "completa"
+    return names, coverage
 
 
 def containers(system: System) -> tuple[list[dict], dict]:
     found = []
     coverage = {}
+
+    def failure(result) -> str:
+        if result.returncode == 127 and result.stderr == "FileNotFoundError":
+            return "incompleta: ferramenta ausente"
+        if result.returncode == 127 and result.stderr == "PermissionError":
+            return "incompleta: acesso à ferramenta negado"
+        return "incompleta: consulta falhou ou acesso indisponível"
+
+    def observed(related: bool) -> str:
+        return (("contêiner relacionado identificado" if related else "nenhum contêiner relacionado identificado") +
+                " nos metadados em execução; interior não inspecionado")
+
     for engine in ("docker", "podman"):
         result = system.run([engine, "ps", "--format", "{{json .}}"], 8)
-        if result.returncode != 0:
-            coverage[engine] = "incompleta: ferramenta ou acesso ao socket indisponível"
+        if result.returncode != 0 and not result.stdout and result.returncode != 124:
+            coverage[engine] = failure(result)
             continue
-        coverage[engine] = "metadados de contêineres em execução; interior não inspecionado"
-        for line in result.stdout.splitlines()[:200]:
+        lines = result.stdout.splitlines()
+        partial = result.returncode != 0 or len(lines) > 200
+        related = False
+        for line in lines[:200]:
             try:
                 row = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
+                partial = True
                 continue
-            image = str(row.get("Image", ""))[:256]
-            command = str(row.get("Command", ""))[:256]
+            if not isinstance(row, dict):
+                partial = True
+                continue
+            if not all(isinstance(row.get(key), str) for key in ("Image", "Command")):
+                partial = True
+            # Um campo inválido não pode apagar o indício presente no outro.
+            image = row.get("Image") if isinstance(row.get("Image"), str) else ""
+            command = row.get("Command") if isinstance(row.get("Command"), str) else ""
             if "php" in (image + command).lower() or "frankenphp" in image.lower() or "litespeed" in image.lower():
+                related = True
                 found.append({"engine": engine, "id": str(row.get("ID", ""))[:80],
-                              "image": image, "status": "INDETERMINADO",
+                              "image": image[:256], "status": "INDETERMINADO",
                               "note": "Versão interna e uso HTTP não comprovados."})
+        coverage[engine] = ("incompleta: enumeração interrompida, metadados inválidos ou limite de 200 entradas excedido; interior não inspecionado"
+                            if partial else observed(related))
     result = system.run(["lxc-ls", "--active", "-1"], 8)
-    coverage["lxc"] = ("metadados de contêineres em execução; interior não inspecionado" if result.returncode == 0
-                       else "incompleta: ferramenta ou acesso LXC indisponível")
-    if result.returncode == 0:
-        for name in result.stdout.splitlines()[:200]:
+    coverage["lxc"] = failure(result) if result.returncode and not result.stdout and result.returncode != 124 else observed(bool(result.stdout.strip()))
+    if result.returncode == 0 or result.stdout or result.returncode == 124:
+        names = result.stdout.splitlines()
+        if result.returncode != 0 or len(names) > 200:
+            coverage["lxc"] = "incompleta: enumeração interrompida ou limite de 200 entradas excedido; interior não inspecionado"
+        for name in names[:200]:
+            if not name.strip():
+                continue
             found.append({"engine": "lxc", "id": name[:80], "status": "INDETERMINADO",
                           "note": "Presença de PHP no interior não comprovada."})
     return found, coverage
@@ -151,13 +193,17 @@ def discover(system: System) -> dict:
     ctrs, ctr_coverage = containers(system)
     bins = binaries()
     php_procs = [p for p in procs if PHP_NAMES.match(p["name"])]
-    has_host_php = bool(pkgs or bins or php_procs)
+    php_service = any(FPM_SERVICE.search(s.lower()) or
+                      any(token in s.lower() for token in ("frankenphp", "lsphp", "php-cgi")) for s in running)
+    has_host_php = bool(pkgs or bins or php_procs or php_service)
     web_running = any(any(n in s.lower() for n in ("apache", "httpd", "nginx", "lighttpd", "litespeed", "lshttpd")) for s in running)
     fpm_running = any(FPM_SERVICE.search(s.lower()) for s in running) or any("php-fpm" in p["name"].lower() for p in procs)
     apache_running = any("apache" in s or "httpd" in s for s in running)
     mod_php = any(p["name"].startswith("libapache2-mod-php") for p in pkgs)
     exposure = "HTTP provável" if ((fpm_running and web_running) or (mod_php and apache_running)) else "HTTP indeterminada"
-    if has_host_php and not web_running and not any("php-cgi" in p["name"] or "frankenphp" in p["name"] or "lsphp" in p["name"] for p in procs):
+    if (has_host_php and svc_coverage == "completa" and proc_coverage == "completa" and
+            not web_running and not php_service and
+            not any("php-cgi" in p["name"] or "frankenphp" in p["name"] or "lsphp" in p["name"] for p in procs)):
         exposure = "sem serviço web PHP identificado; uso CLI possível"
     return {"os": distro, "packages": pkgs, "binaries": bins, "processes": procs,
             "services": running, "containers": ctrs, "host_php": has_host_php,

@@ -10,7 +10,7 @@ FORBIDDEN_PARTS = {"__pycache__", ".agents", ".codex", ".aws", ".private", "back
 REQUIRED = {"pyproject.toml", "LICENSE", "README.md", "SECURITY.md", "CHANGELOG.md",
             "php_security_auditor/data/advisories.json", "tests/test_auditor.py",
             "tests/test_regressions.py", "tests/test_remote_audit_fixes.py",
-            "tests/test_plan_results.py", "tools/check_sdist.py"}
+            "tests/test_plan_results.py", "tests/test_stabilization.py", "tools/check_sdist.py"}
 
 
 def inspect(archive: str) -> list[str]:

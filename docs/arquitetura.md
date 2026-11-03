@@ -4,9 +4,11 @@ O projeto usa Python 3 e apenas a biblioteca padrão. Python permite JSON, limit
 
 Fluxo: descoberta do hospedeiro e contêineres → inventário → avaliação por fonte → investigação limitada se houver PHP potencialmente vulnerável → apresentação dos achados e limites → plano simulado. A atualização tem bloqueio de liberação até ensaios operacionais. O caminho preparado para liberação futura ainda exige triagem sem achado grave, coleta essencial, confirmação humana, backup e validação. A execução sem argumentos termina após a auditoria passiva. Escrita de relatórios é opcional.
 
-Limites: a inspeção de contêiner é por metadados locais e não entra neles; versões e conteúdo interno podem permanecer indeterminados. Não se executam binários PHP desconhecidos para descobrir versões. A versão do CLI nunca prova a versão efetiva do servidor. O plano de atualização considera apenas pacotes oficiais conhecidos do Debian/Ubuntu; a execução de atualizações está bloqueada na versão `0.1.0`. Nenhuma alteração em firewall, contas, serviços ou configuração de segurança é automática.
+Limites: a inspeção de contêiner é por metadados locais e não entra neles; versões e conteúdo interno podem permanecer indeterminados. Não se executam binários PHP desconhecidos para descobrir versões. A versão do CLI nunca prova a versão efetiva do servidor. O plano de atualização considera apenas pacotes oficiais conhecidos do Debian/Ubuntu; a execução de atualizações continua bloqueada. Nenhuma alteração em firewall, contas, serviços ou configuração de segurança é automática.
 
 Os módulos `system`, `discovery`, `versions`, `forensics`, `backup`, `remediation`, `report` e `cli` isolam responsabilidades. A camada `System` é injetável nos testes. Saídas externas, paths, logs e metadados são tratados como dados não confiáveis. Leitura de evidências tem limites de bytes/arquivos, recusa links simbólicos e mantém apenas metadados e indicadores mínimos nos relatórios.
+
+`coverage.py` reúne a apresentação das limitações aninhadas, compartilhada por relatórios e planejamento. `verification.py` produz uma classificação própria que considera o status dos pacotes, a cobertura e os runtimes observados. Auditoria, planejamento e verificação compartilham a comprovação de propriedade dos executáveis; essa verificação não substitui a avaliação de vulnerabilidades nem comprova teste HTTP funcional. Na execução da CLI, a associação é consultada uma vez e reutilizada pelos resultados aplicáveis.
 
 ## Créditos
 

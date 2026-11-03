@@ -8,7 +8,7 @@ python3 -m compileall -q php_security_auditor tests tools
 python3 -m php_security_auditor.cli --help
 ```
 
-A suíte atual contém 151 testes e também é executada em cópia sem `.git`. Os testes de timeout executam somente processos Python locais de duração limitada; não chamam APT para instalar pacotes. A sintaxe Python e o conteúdo de pacotes gerados devem ser verificados novamente antes de distribuir a ferramenta.
+A suíte também é executada em cópia sem `.git`; a contagem efetiva aparece na saída de `unittest`. Os testes de timeout executam somente processos Python locais de duração limitada; não chamam APT para instalar pacotes. A sintaxe Python e o conteúdo de pacotes gerados devem ser verificados novamente antes de distribuir a ferramenta.
 
 O workflow `.github/workflows/ci.yml` executa a suíte, a sintaxe Python, a consistência entre a versão da CLI e `pyproject.toml` e a ajuda da CLI em Python 3.10 e 3.12, no runner `ubuntu-24.04`. Ele roda em PRs para `main`, pushes em `main` e acionamento manual, com token limitado a `contents: read`. Não usa APT, não instala dependências Python nem executa auditoria ou remediação no runner. O pacote de fontes continua sujeito à conferência separada antes de distribuição; CI local ou remoto não demonstra funcionamento operacional nas distribuições suportadas.
 
@@ -34,12 +34,15 @@ O workflow `.github/workflows/ci.yml` executa a suíte, a sintaxe Python, a cons
 | Estados de `plan` | JSON e códigos de saída para ausência de PHP, cobertura parcial, runtime manual, contêiner, pacote corrigido, candidato válido ou ausente, origem incerta, falhas APT e remediação bloqueada |
 | Cobertura de processos | Thread de kernel sem `exe` comprovada por metadados, processo zumbi, processo de usuário inacessível e dados malformados de `/proc` |
 | Associação de runtimes | Binário e processo em `/srv`, link sem destino, cadeia de alternativas, proprietário oficial, proprietário divergente, resposta ambígua e falha de consulta `dpkg` |
+| Verificação automatizada | Cobertura de `/proc` insuficiente, pacote corrigido/vulnerável/indeterminado, executável removido, runtime sem proprietário comprovado, falha operacional e HTTP explicitamente pendente |
+| Cobertura de contêineres nos relatórios | Ferramenta ausente, consulta/acesso malsucedido, ausência de relacionado, PHP interno indeterminado, indícios válidos preservados em metadados parciais e limite de entradas; contagem e sanitização em TXT/JSON/Markdown |
+| Enumerações e associação compartilhada | PHP após o limite de 200 contêineres; saída parcial com e sem indício; cortes de pacotes, processos e serviços; runtime oficial e destinos não comprovados em `/srv`, `/opt` e `/usr/local`; estados de `audit`, `report`, `verify` e `plan` |
 
 Esses testes automatizados não demonstram funcionamento operacional nas distribuições anunciadas, nem substituem teste de aplicação web e revisão humana de incidente. A execução de `remediate` permanece bloqueada.
 
 ## Validação operacional em Debian 13
 
-Validação operacional realizada em ambiente isolado com Debian 13 Trixie. Os cenários abaixo registram as configurações, a cobertura e os resultados observados na auditoria e no planejamento.
+Validação operacional da versão 0.1.0 realizada em ambiente isolado com Debian 13 Trixie. Os cenários abaixo registram as configurações, a cobertura e os resultados observados na auditoria e no planejamento.
 
 | Cenário | Configuração e cobertura | Auditoria | Planejamento | Motivo estruturado | Saída de `plan` |
 |---|---|---|---|---|---|
@@ -50,12 +53,11 @@ Validação operacional realizada em ambiente isolado com Debian 13 Trixie. Os c
 
 O cenário A não demonstra ausência de instalações em todos os caminhos possíveis ou no interior de contêineres. A confirmação HTTP do cenário C foi manual; `verify` não a executa automaticamente. Esses ensaios não incluem atualização real de pacotes vulneráveis, falhas de atualização, recuperação ou validação operacional em outras distribuições. As evidências originais e os detalhes do ambiente permanecem privados.
 
-## Pendências observadas em laboratório
+## Regressões do ciclo 0.1.1
 
-- `verify` pode retornar código `0` com validação interna incompleta. O operador deve ler o resultado e verificar cobertura, runtimes, serviços e aplicação; o código isolado não aprova atualização nem confirma segurança. Não há teste funcional HTTP automático.
-- O relatório de auditoria não contabiliza corretamente todas as limitações aninhadas de Docker, Podman e LXC. A cobertura detalhada deve ser examinada; `plan` apresenta as limitações de forma estruturada.
+As lacunas da 0.1.0 no retorno de `verify` e na agregação de limitações de contêineres têm testes sintéticos em `tests/test_stabilization.py`. O contrato de verificação diferencia conclusão automatizada satisfatória de insuficiência e falha, sem realizar teste HTTP. Os códigos de `plan` e o bloqueio da remediação são preservados.
 
-Essas limitações devem ser tratadas em versões posteriores, com testes de regressão. A remediação operacional permanece bloqueada; consulte os detalhes em [limitações conhecidas](limitacoes.md).
+Essas correções ainda não foram ensaiadas operacionalmente nas distribuições contempladas. Os cenários históricos acima não validam o novo contrato; consulte [utilização](utilizacao.md#verificação-automatizada) e [limitações conhecidas](limitacoes.md).
 
 ## Ensaios pendentes para uma liberação futura
 

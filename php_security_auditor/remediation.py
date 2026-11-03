@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from .backup import BackupSession, _write_exclusive, validate_manifest
+from .coverage import container_enumeration_incomplete, coverage_limitations
 from .discovery import FPM_SERVICE, PHP_NAMES, discover
 from .system import System
 from .versions import compare, database, evaluate, package_origin
@@ -37,13 +38,7 @@ def _simulation(system: System, specs: list[str]) -> tuple[list[str], int]:
 
 
 def _coverage_limitations(coverage: dict) -> list[str]:
-    notes = []
-    for source, value in coverage.items():
-        entries = value.items() if isinstance(value, dict) else ((source, value),)
-        for label, detail in entries:
-            if "incompleta" in str(detail):
-                notes.append(f"Cobertura {label}: {detail}")
-    return notes
+    return coverage_limitations(coverage)
 
 
 def _unmatched_runtime(system: System, inventory: dict, assessed: list[dict]) -> bool:
@@ -108,7 +103,18 @@ def _unmatched_runtime(system: System, inventory: dict, assessed: list[dict]) ->
     return owned != unique
 
 
-def plan(system: System, inventory: dict, assessed: list[dict]) -> dict:
+def runtime_association(system: System, inventory: dict, assessed: list[dict]) -> str:
+    """Classifica a associação sem executar os binários PHP observados."""
+    if any(PHP_NAMES.match(process.get("name", "")) and process.get("state") not in ("Z", "X") and
+           str(process.get("exe", "")).endswith(" (deleted)") for process in inventory.get("processes", [])):
+        return "NAO_COMPROVADO"
+    try:
+        return "NAO_COMPROVADO" if _unmatched_runtime(system, inventory, assessed) else "COMPROVADO"
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        return "ERRO"
+
+
+def plan(system: System, inventory: dict, assessed: list[dict], runtime_state: str | None = None) -> dict:
     distro = inventory["os"]
     coverage = inventory.get("coverage", {})
     limitations = _coverage_limitations(coverage) + [
@@ -142,6 +148,8 @@ def plan(system: System, inventory: dict, assessed: list[dict]) -> dict:
 
     essential = [source for source in ("pacotes", "processos")
                  if source not in coverage or "incompleta" in str(coverage[source])]
+    if str(coverage.get("serviços", "")).startswith(("incompleta: limite", "incompleta: enumeração")):
+        essential.append("serviços")
     if essential:
         message = "Cobertura essencial insuficiente: " + ", ".join(essential) + "."
         return result("INCONCLUSIVO", "COBERTURA_ESSENCIAL_INCOMPLETA", message,
@@ -155,7 +163,12 @@ def plan(system: System, inventory: dict, assessed: list[dict]) -> dict:
         message = "Comparação de versões dpkg falhou." if command_failed else "Há versão ou origem de runtime PHP indeterminada."
         return result(status, code, message, issues=[{"code": code, "message": message}])
 
-    if _unmatched_runtime(system, inventory, assessed):
+    association = runtime_state if runtime_state is not None else runtime_association(system, inventory, assessed)
+    if association == "ERRO":
+        message = "Falha ao comprovar a origem de um runtime PHP observado."
+        return result("ERRO", "FALHA_ASSOCIACAO_RUNTIME", message,
+                      issues=[{"code": "FALHA_ASSOCIACAO_RUNTIME", "message": message}])
+    if association != "COMPROVADO":
         message = "Binário ou processo PHP sem versão e origem de pacote comprovadas."
         return result("INCONCLUSIVO", "RUNTIME_NAO_AVALIADO", message,
                       issues=[{"code": "RUNTIME_NAO_AVALIADO", "message": message}])
@@ -163,6 +176,10 @@ def plan(system: System, inventory: dict, assessed: list[dict]) -> dict:
         message = "Contêiner identificado; versão interna do PHP não inspecionada."
         return result("INCONCLUSIVO", "CONTEINER_NAO_INSPECIONADO", message,
                       issues=[{"code": "CONTEINER_NAO_INSPECIONADO", "message": message}])
+    if container_enumeration_incomplete(coverage):
+        message = "Enumeração de contêineres incompleta; presença de PHP não pode ser descartada."
+        return result("INCONCLUSIVO", "COBERTURA_CONTEINER_INCOMPLETA", message,
+                      issues=[{"code": "COBERTURA_CONTEINER_INCOMPLETA", "message": message}])
     if inventory.get("packages") and not assessed:
         message = "Pacotes PHP descobertos sem avaliação de versão."
         return result("INCONCLUSIVO", "PACOTES_NAO_AVALIADOS", message,

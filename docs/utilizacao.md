@@ -25,11 +25,11 @@ O período padrão de 30 dias é apenas uma triagem inicial. Para PHP exposto, a
 |---|---|---|
 | `PLANO_DISPONIVEL` | Candidato oficial e dependências foram verificados na simulação. `approved_possible=true` indica elegibilidade técnica, não autorização. | `0` |
 | `SEM_ACAO` | Nenhuma atualização aplicável: pacotes avaliáveis corrigidos ou nenhum runtime PHP identificado pelos métodos executados. | `0` |
-| `INCONCLUSIVO` | Runtime manual, contêiner não inspecionado, versão indeterminada ou cobertura essencial insuficiente. | `2` |
+| `INCONCLUSIVO` | Runtime manual, contêiner não inspecionado, enumeração parcial, versão indeterminada ou cobertura essencial insuficiente. | `2` |
 | `BLOQUEADO` | Atualização necessária sem candidato seguro, distribuição não suportada, remoção ou dependência não comprovada. | `2` |
 | `ERRO` | Falha operacional, como consulta ou simulação APT malsucedida. | `2` |
 
-O código `0` significa que `plan` concluiu a avaliação disponível; não comprova ausência de PHP, comprometimento ou necessidade futura de atualização. Quando `status=SEM_ACAO`, `packages`, `simulation`, `services`, `checks` e `risks` ficam vazios; `applications`, `backups` e `recovery` ficam nulos. O resultado preserva ressalvas da descoberta. A busca de binários não é exaustiva e o interior dos contêineres não é inspecionado. Falha opcional de acesso a um mecanismo de contêiner aparece em `limitations`; falha de cobertura essencial de pacotes ou processos torna o plano inconclusivo.
+O código `0` significa que `plan` concluiu a avaliação disponível; não comprova ausência de PHP, comprometimento ou necessidade futura de atualização. Quando `status=SEM_ACAO`, `packages`, `simulation`, `services`, `checks` e `risks` ficam vazios; `applications`, `backups` e `recovery` ficam nulos. O resultado preserva ressalvas da descoberta. A busca de binários não é exaustiva e o interior dos contêineres não é inspecionado. Ferramenta opcional de contêiner indisponível aparece em `limitations`; enumeração iniciada e incompleta retorna `INCONCLUSIVO` com `reason_code=COBERTURA_CONTEINER_INCOMPLETA` se não houver um contêiner já identificado. Cobertura incompleta de pacotes ou processos, assim como listagem parcial de serviços, impede um plano conclusivo.
 
 Quando há binário ou processo PHP observado e pacote avaliado que poderia cobri-lo, `plan` consulta a propriedade do executável final em `dpkg-query`. Links de alternativas são seguidos até o destino; destino indeterminado, pacote proprietário não avaliado ou consulta malsucedida resultam em `INCONCLUSIVO`. Nome e ramo iguais aos de um pacote corrigido não bastam para associar o runtime. Essa consulta não verifica a integridade dos bytes do executável.
 
@@ -40,9 +40,30 @@ python3 -m php_security_auditor.cli verify
 python3 -m php_security_auditor.cli rollback-config --session /caminho/para/sessao
 ```
 
-Em `0.1.0`, `verify` pode retornar código `0` mesmo quando apresenta `VALIDAÇÃO INCOMPLETA`. Leia o resultado e a cobertura; não use esse código isoladamente para aprovar uma atualização ou confirmar segurança. O comando não executa teste HTTP funcional automático. O relatório de auditoria também não contabiliza corretamente todas as limitações aninhadas de contêineres; examine a cobertura detalhada e as limitações estruturadas de `plan`. Consulte os detalhes em [limitações conhecidas](limitacoes.md).
+### Verificação automatizada
 
-O último caminho é um **EXEMPLO**; substitua pelo caminho da sessão criada. `rollback-config` valida o manifesto e informa que esta versão não altera configurações, portanto não há restauração automática. Nunca use downgrade para voltar a uma versão vulnerável.
+No ciclo 0.1.1, `verify` passa a ter o seguinte contrato; os códigos dos outros comandos permanecem inalterados:
+
+| `verification.status` | Critério | Saída |
+|---|---|---|
+| `SATISFATORIO_NO_ESCOPO_AUTOMATIZADO` | Há pacote corrigido avaliável; nenhum pacote vulnerável/indeterminado; cobertura de pacotes, processos e serviços completa; nenhuma enumeração parcial de contêiner, executável removido, contêiner relacionado não inspecionado ou runtime sem associação comprovada. | `0` |
+| `INCONCLUSIVO` | Cobertura insuficiente, ausência de pacote PHP corrigido avaliável, versão indeterminada ou runtime/contêiner sem comprovação. | `2` |
+| `INSATISFATORIO` | Pacote vulnerável ou executável removido observado. | `2` |
+| `ERRO` | Falha operacional durante a verificação. Falhas anteriores à geração do relatório são informadas em stderr, também com saída `2`. | `2` |
+
+`verify` não executa teste HTTP funcional, não verifica integralmente serviços/módulos/aplicações e não comprova integridade dos executáveis. O campo `http_test_performed` permanece `false`, inclusive com retorno `0`. Esse retorno não aprova uma atualização, não demonstra ausência de comprometimento nem certifica todo o ambiente. Valide a aplicação manualmente.
+
+JSON resumido e detalhado incluem `verification.status`, `verification.reason_codes` e `verification.http_test_performed`. TXT e Markdown apresentam a mesma conclusão e a pendência HTTP. Os motivos estruturados são: `COBERTURA_ESSENCIAL_INCOMPLETA`, `COBERTURA_CONTEINER_INCOMPLETA`, `PACOTES_NAO_COMPROVADOS`, `EXECUTAVEL_REMOVIDO`, `RUNTIME_NAO_AVALIADO`, `CONTEINER_NAO_INSPECIONADO`, `AVALIACAO_INDETERMINADA` e `FALHA_ASSOCIACAO_RUNTIME`. Um executável observado precisa de propriedade comprovada por pacote oficial avaliado, sem executar o binário PHP.
+
+Falha de ferramenta opcional de contêiner é uma limitação explícita, sem aprovação da sua cobertura. Nos resumos, `container_coverage` usa somente Docker, Podman e LXC com as categorias `FERRAMENTA_AUSENTE`, `ACESSO_NEGADO`, `CONSULTA_FALHOU`, `COBERTURA_INCOMPLETA`, `SEM_RELACIONADOS_INTERIOR_NAO_INSPECIONADO`, `RELACIONADOS_INTERIOR_NAO_INSPECIONADO`, `INDETERMINADO` ou `NAO_INFORMADO`. A lista detalhada de limitações preserva o contexto de cada mecanismo; `limitations_count` no resumo contabiliza essas entradas sem copiá-las.
+
+**Compatibilidade:** na 0.1.0, `verify` podia retornar `0` com avaliação insuficiente. Scripts que usavam esse retorno incondicional precisam aceitar `2` e ler os novos campos. Nenhum PHP identificado pode produzir `plan=SEM_ACAO/0`, mas não é uma validação PHP aprovada por `verify` (`2`). Os campos anteriores dos relatórios são mantidos; os novos campos JSON são aditivos.
+
+A listagem de contêineres consulta somente os metadados em execução, conforme a documentação de [Docker](https://docs.docker.com/reference/cli/docker/container/ls/) e [Podman](https://docs.podman.io/en/latest/markdown/podman-ps.1.html). Ausência de relacionado não comprova ausência de PHP no interior. Consulte as [limitações conhecidas](limitacoes.md).
+
+### Recuperação de configurações
+
+O caminho `/caminho/para/sessao` no comando `rollback-config` é um **EXEMPLO**; substitua pelo caminho da sessão criada. `rollback-config` valida o manifesto e informa que esta versão não altera configurações, portanto não há restauração automática. Nunca use downgrade para voltar a uma versão vulnerável.
 
 ## Créditos
 

@@ -288,8 +288,10 @@ class FlowTests(unittest.TestCase):
         simulation = "Inst php8.2-fpm [8.2.34] (8.2.35-1~deb12u1 Debian:12 [amd64])\nInst helper [1] (2 vendor:1 [amd64])\n"
         outputs = {("apt-cache", "policy", "php8.2-fpm"): (0, "Candidate: 8.2.35-1~deb12u1", ""),
                    ("apt-get", "-s", "--no-remove", "--only-upgrade", "install", "php8.2-fpm=8.2.35-1~deb12u1"): (0, simulation, "")}
+        found = inventory([package()])
+        found["coverage"]["contêineres"] = {}  # Este teste isola dependências APT; a descoberta real usa um mapa.
         with patch.object(remediation, "compare", return_value=True), patch.object(remediation, "package_origin", side_effect=lambda _sys, name, _version, _distro: "oficial debian" if name == "php8.2-fpm" else "não comprovada"):
-            proposed = remediation.plan(FakeSystem(outputs), inventory([package()]), assessed)
+            proposed = remediation.plan(FakeSystem(outputs), found, assessed)
         self.assertFalse(proposed["approved_possible"])
         self.assertTrue(any("Dependência" in item for item in proposed["errors"]))
 
