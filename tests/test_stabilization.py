@@ -251,6 +251,32 @@ class StabilizationTests(unittest.TestCase):
                 self.assertLessEqual(len(found), 200)
                 self.assertIn("incompleta", coverage["docker"])
 
+    def test_metadados_parciais_preservam_indicio_php_e_bloqueiam_plan_verify(self):
+        for engine in ("docker", "podman"):
+            for row in ({"Image": "php:8.5"}, {"Image": "php:8.5", "Command": []},
+                        {"Command": "php-fpm"}, {"Image": None, "Command": "php-fpm"}):
+                with self.subTest(engine=engine, row=row):
+                    outputs = {("docker", "ps", "--format", "{{json .}}"): (0, "", ""),
+                               ("podman", "ps", "--format", "{{json .}}"): (0, "", ""),
+                               ("lxc-ls", "--active", "-1"): (0, "", "")}
+                    outputs[(engine, "ps", "--format", "{{json .}}")] = (0, json.dumps(row) + "\n", "")
+                    containers, coverage = discovery.containers(FakeSystem(outputs))
+                    self.assertEqual(len(containers), 1)
+                    self.assertIn("incompleta", coverage[engine])
+                    found, assessed = corrected_inventory()
+                    found["containers"] = containers
+                    found["coverage"]["contêineres"] = coverage
+                    code, data, _, _ = self.invoke(found, assessed)
+                    self.assertEqual((code, data["verification"]["status"]), (2, "INCONCLUSIVO"))
+                    output = io.StringIO()
+                    with patch.object(cli, "System", return_value=FakeSystem()), \
+                         patch.object(cli, "discover", return_value=found), \
+                         patch.object(cli, "evaluate", return_value=assessed), contextlib.redirect_stdout(output):
+                        self.assertEqual(cli.main(["plan"]), 2)
+                    plan = json.loads(output.getvalue())
+                    self.assertEqual((plan["status"], plan["reason_code"]),
+                                     ("INCONCLUSIVO", "CONTEINER_NAO_INSPECIONADO"))
+
     def test_acesso_negado_na_execucao_da_ferramenta(self):
         outputs = {("docker", "ps", "--format", "{{json .}}"): (127, "", "PermissionError"),
                    ("podman", "ps", "--format", "{{json .}}"): (127, "", "FileNotFoundError"),

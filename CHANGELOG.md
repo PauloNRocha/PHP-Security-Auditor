@@ -7,7 +7,7 @@ Funcionalidades e alterações do PHP Security Auditor por versão, seguindo os 
 ### Corrigido
 
 - `verify` retorna `2` quando a cobertura essencial é insuficiente, há pacote vulnerável/indeterminado, executável removido, contêiner não inspecionado ou runtime sem associação comprovada a pacote avaliado. Falhas operacionais também não retornam sucesso.
-- Relatórios contabilizam limitações aninhadas de Docker, Podman e LXC e distinguem ferramenta ausente, acesso/consulta malsucedida, metadados parciais e ausência de contêiner relacionado. O interior continua não inspecionado.
+- Relatórios contabilizam limitações aninhadas de Docker, Podman e LXC e distinguem ferramenta ausente, acesso/consulta malsucedida, metadados parciais e ausência de contêiner relacionado. Indícios de PHP em campos válidos são preservados mesmo se outros campos estiverem inválidos. O interior continua não inspecionado.
 
 ### Alterado
 

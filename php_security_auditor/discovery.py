@@ -142,15 +142,18 @@ def containers(system: System) -> tuple[list[dict], dict]:
             except (ValueError, RecursionError):
                 partial = True
                 continue
-            if not isinstance(row, dict) or not all(isinstance(row.get(key), str) for key in ("Image", "Command")):
+            if not isinstance(row, dict):
                 partial = True
                 continue
-            image = str(row.get("Image", ""))[:256]
-            command = str(row.get("Command", ""))[:256]
+            if not all(isinstance(row.get(key), str) for key in ("Image", "Command")):
+                partial = True
+            # Um campo inválido não pode apagar o indício presente no outro.
+            image = row.get("Image") if isinstance(row.get("Image"), str) else ""
+            command = row.get("Command") if isinstance(row.get("Command"), str) else ""
             if "php" in (image + command).lower() or "frankenphp" in image.lower() or "litespeed" in image.lower():
                 related = True
                 found.append({"engine": engine, "id": str(row.get("ID", ""))[:80],
-                              "image": image, "status": "INDETERMINADO",
+                              "image": image[:256], "status": "INDETERMINADO",
                               "note": "Versão interna e uso HTTP não comprovados."})
         coverage[engine] = ("incompleta: metadados inválidos ou limite de 200 entradas excedido; interior não inspecionado"
                             if partial else observed(related))
